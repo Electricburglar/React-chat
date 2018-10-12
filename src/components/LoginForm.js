@@ -1,5 +1,5 @@
 import React, { Component } from 'react';
-import { VERIFY_USER } from '../Events';
+import { VERIFY_USER } from '../Constants';
 
 class LoginForm extends Component {
 

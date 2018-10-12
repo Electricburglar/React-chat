@@ -1,39 +1,104 @@
-const io = require('.').io;
-const { VERIFY_USER, USER_CONNECTED, LOGOUT } = require('../Events');
-const { createUser, createMessage, createChat } = require('../Factories');
-const connectedUsers = {  }
+const io = require('./index.js').io
+const { 
+  COMMUNITY_CHAT, MESSAGE_RECIEVED, MESSAGE_SENT, 
+  USER_CONNECTED, USER_DISCONNECTED, TYPING, 
+  STOP_TYPING, VERIFY_USER, LOGOUT
+        } = require('../Constants')
+const { createUser, createChat, createMessage } = require('../Classes')
+let communityChat = createChat()
+let connectedUsers = {};
+let chats = [communityChat];
 
-module.exports = function(socket) {
-    console.log("Socket ID :"+socket.id);
 
-    socket.on(VERIFY_USER, (nickname, callback) => {
-        if(isUser(connectedUsers, nickname)) {
-            callback({isUser: true, user: null})
-        }
-        else {
-            callback({isUser: false, user: createUser({name: nickname})})
-        }
-    });
+module.exports = function(socket){
+  
+  let sendMessageToChatFromUser;
+  let sendTypingFromUser;
+  
+  socket.on(VERIFY_USER, function(newUser, callback){
+    if(!isUser(connectedUsers, newUser)){
+      
+      callback({isUser:false, user:createUser({name:newUser})})
 
-    socket.on(USER_CONNECTED, (user) => {
-        connectedUsers = addUser(connectedUsers, user);
-        socket.user = user;
-        console.log(connectedUsers);
-    });
+    }else{
+     
+      callback({isUser:true})
+
+    }
+  })
+
+  socket.on(USER_CONNECTED, function(user){
+    
+    connectedUsers = addUser(connectedUsers, user)
+    socket.user = user.name;
+    sendMessageToChatFromUser = sendMessageToChat(user.name)
+    sendTypingFromUser = sendTypingToChat(user.name)
+
+    console.log(connectedUsers);
+    io.emit(USER_CONNECTED, connectedUsers);
+  });
+
+  socket.on('disconnect', function (){
+    if(!!socket.user){
+      connectedUsers = removeUser(connectedUsers, socket.user);
+      io.emit(USER_DISCONNECTED, connectedUsers);
+    }
+    
+  });
+
+  socket.on(LOGOUT, function(){
+    connectedUsers = removeUser(connectedUsers, socket.user)
+  });
+
+  socket.on(COMMUNITY_CHAT, function(callback){
+    callback(communityChat)
+  });
+
+  socket.on(MESSAGE_SENT, function({chatId, message}){
+    sendMessageToChatFromUser(chatId, message)
+  });
+
+  socket.on(TYPING, function({chatId, isTyping}){
+    sendTypingFromUser(chatId, isTyping)
+  });
+
 }
 
-function addUser(userList, user) {
-    let newList = Object.assign({}, userList);
-    newList[user.name] = user;
-    return newList;
+function sendMessageToChat(sender){
+
+   return (chatId, message) => {
+                io.emit(`${MESSAGE_RECIEVED}-${chatId}`, createMessage({message, sender}))
+              }
+} 
+
+function sendTypingToChat(user){
+
+  return (chatId, isTyping)=>
+            {
+                io.emit(`${TYPING}-${chatId}`, {user, isTyping})
+            }
 }
 
-function removeUser(userList, username) {
-    let newList = Object.assign({}, userList);
-    delete newList[username];
-    return newList;
+function addUser(userList, user){
+  let newList = Object.assign({}, userList)
+  newList[user.name] = user
+  return newList
 }
 
-function isUser(userList, username) {
-    return username in userList;
+function removeUser(userList, username){
+  let newList = Object.assign({}, userList)
+  delete newList[username]
+  return newList
+}
+
+function isUser(userList, username){
+  return username in userList
+}
+
+function createError(message){
+  return {
+    error:{
+      message
+    }
+  }
 }
